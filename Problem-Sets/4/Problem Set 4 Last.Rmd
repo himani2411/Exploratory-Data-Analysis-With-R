@@ -1,0 +1,148 @@
+---
+title: "Problem Set 4 "
+author: "Himani Anil Deshpande"
+date: "10/11/2021"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r setup, warning = FALSE, include=FALSE}
+knitr::opts_chunk$set(warning = FALSE, echo = TRUE, message = FALSE)
+library(tidyverse)
+library(plotly)
+library(broom)
+library(readr)
+library(MASS)
+library(mgcv)
+library(GGally)
+library(metR)
+```
+
+## Loading Data
+```{r}
+#ratings = read_delim("title.ratings.tsv", delim = '  ', col_names =   TRUE)
+#basics = read_delim("title.basics.tsv", delim = '  ', col_names =   TRUE)
+
+ratings = read_tsv("title.ratings.tsv", na = "\\N", quote = "''")
+basics = read_tsv("title.basics.tsv", na = "\\N", quote = "''")
+#ratings
+basics = basics %>% 
+  filter(titleType == "movie")
+
+```
+
+## Merging Data
+
+```{r}
+imdb.data.movies = merge(ratings, basics , by = "tconst")
+#imdb.data.movies = imdb.data.movies %>% 
+ # filter(titleType == "movie")
+imdb.data.movies  = imdb.data.movies[c("averageRating", "startYear", "runtimeMinutes", "numVotes")]
+imdb.data.movies = imdb.data.movies %>% drop_na()
+#imdb.data.movies
+imdb.data.movies$runtimeMinutes = as.numeric(imdb.data.movies$runtimeMinutes)
+```
+
+
+When we check averageRating we see that it is uniformly distributed. So we dont need to perform any transformation.
+
+When we see startYear, we get a left skewed data, which could be due to the reason that we have taken a lot of movies into consideration which are recent. We havent taken movies that were created before 1918. Part of the reason could be that the dataset is not vast or that the production of movies might have taken off after this period and there were few movies produced before 1920. So we can remove these movies from consideration.
+For runtimeMinutes independent variable, there are outliers that are near 43200. To reduce the outliers we can limit the dataset to have only movies with runtimeMinutes of 300 minutes.
+
+ 
+```{r}
+imdb.data.movies.clean = imdb.data.movies %>% filter( runtimeMinutes <= 300, startYear > 1915)
+
+```
+The runTimeMinutes density plot is positive and right skewed, so we can perform a log tranformation to get a uniform distribution.
+
+```{r}
+imdb.data.movies.clean$runtimeMinLog = log10(imdb.data.movies.clean$runtimeMinutes)
+
+```
+
+We need to check which variable is suitable for cutting. we can use Start Year. However cutting it in 6 plots gives us an idea that the trend increases till 2003 and then decreases afterwards or just reaches a plateau. It makes much more sense to start cutting for years that we are interested(i.e 2003) in as the startYear is left skewed distributed.
+
+Both RLM and LM seems to show the same trend. We are not going to use loess as the data is above the 10000 records that can be handled.
+
+We observe that the numVotes variables have a large variation for different movie. Some movies have 5 people who have votes and others have about 24 million votes. So more people who have voted might affect the average rating of a movie less significantly. However, a single dislike/downvote for a movie with only 5 numVotes will affect the average rating of that movies significantly. So, we need to account of the weight that numVotes have on averageRating.
+
+
+
+```{r}
+#Creating labels based on the factors of StartYear when we cut it at 2003
+label <- c(`(1.92e+03,2e+03]` = "Before 2003", `(2e+03,2.02e+03]` = "After 2003")
+
+
+ggplot(imdb.data.movies.clean, aes(x = runtimeMinLog, y = averageRating)) + 
+  geom_point() + 
+  xlab("Log of Run Time Minutes") + 
+  ylab("Average Rating") +
+  geom_smooth(aes(weight = numVotes), method = "lm", se = FALSE) + 
+  geom_smooth( method = "lm", se = FALSE, color = "green") + 
+ 
+  
+   geom_smooth(aes(weight = numVotes), method = "gam", color = "red", se = FALSE) +
+   
+  facet_wrap(~cut(startYear, breaks = c(1915, 2003, 2021)), ncol = 2,
+             labeller =as_labeller(label)) + 
+  labs(title = "Model on Log of runtime in minuutes", 
+       subtitle = "Weighted and Unweighted Linear and Gam Model")+
+  theme(
+    
+      strip.text.x = element_text(
+        size = 12, color = "black", face = "bold.italic"
+        ),
+      strip.text.y = element_text(
+        size = 12, color = "black", face = "bold.italic"
+        )
+      )
+
+```
+Those runtime below 1 are those with runTimeMinutes less than or equal to 10 minutes so we can avoid these.After taking the weight of numVotes into account we see a change in trends. Without numVotes the trend was increasing before 2003 and decreases after 2003. However, after taking numVotes into consideration we see that the trend is increasing form 1916 to 2021. Also, the slopes for both the facets are similar for lm and rlm respectively. We can use other additive models, I tried using Gam model for observing the trend, but it seems that the graph is not adequate for explaining the trend in data.
+
+
+# Model Fitting
+
+I am choosing the GAM model for fitting the data as it gives me more flexibility in handling the data. As well as allow me to smooth the interaction of another variable.
+
+
+## Gam Model
+```{r}
+
+imdb.movies.gam = gam(averageRating ~ startYear + s(runtimeMinLog), data = imdb.data.movies.clean, weights = numVotes,method = "REML")
+# s is for smooth and REML gives a bit of protection from overfitting
+
+imdb.movies.gam.df = data.frame(imdb.data.movies.clean, .resid = residuals(imdb.movies.gam))
+
+
+```
+
+## Contour and Rastor Plots
+
+Taking the log of runTimeMinutes from 0 to 2.5 with a increment by a value of 0.01( approx 1.02 Minutes) so that we can get all the data points. 
+
+### Creating a Grid
+```{r}
+imdb.grid = expand.grid(startYear = seq(1915, 2021, 1),runtimeMinLog = seq(0,2.5,0.01))
+imdb.predict = predict(imdb.movies.gam, newdata = imdb.grid)
+imdb.df = data.frame(imdb.grid, fit = as.vector(imdb.predict))
+
+```
+For the movies with log of run time between 1.5 to 2( i.e 31 minutes to 100 minutes) the average rating has a decreasing trend. And for the movies with a log of 0.75 to 1( 6 minutes to 10 minutes run time) there is a gradual decrease in ratings. For movies with runtime greater than 100 minutes(i.e log of runtime greater than 2), the movies were highly rated during 1916-1945, however there is a decrease in their rating in the recent years. If we observe the overall trend for all the years we see that the trend is decreasing.
+
+```{r}
+plot_ly(imdb.df, x = ~startYear, y = ~runtimeMinLog, z =~fit, type = "contour", colorscale = list(c(0, 0.3, 1), c('blue', 'yellow', 'red'))) %>% layout(title = list(text =paste0('Rastour and contour of Log runtime minutes vs. start year', '<br>', '<sup>','fitted value of Avg Rating is used as filling')), xaxis = list(title = "Start Year"), yaxis = list(title= "Log of Run Time Minutes") )
+   
+```
+
+
+## Relation of Rating and Runtime: 
+
+While taking into account the Year of the movie released, the relationship between the longer movies
+and the IMDB ratings isn't monotonically increasing. For different runtime periods the trend is different. 
+There seems to be only one range of runtime minutes which is not highly rated as the other time ranges. The runtime minutes of range of 56 minutes to 100 minutes have a lower rating than that of the other runtimes. The other run time minutes of movies have higher average imdb ratings from 1915 to 2021. So the highly rated movie have a runtime of less than 35 minutes or in the range of 100 minutes to 280 minutes. 
+Also, movies with a runtime minutes greater than 280 minutes have a lower rating. 
+However, whatever the run time in minutes is; the overall trend shows a decreasing trend as per the rastor and contour plot.
+
