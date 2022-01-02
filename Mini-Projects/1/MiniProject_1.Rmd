@@ -1,0 +1,689 @@
+
+---
+title: "Mini Project 1"
+author: "Team Nevada"
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+  word_document: default
+---
+
+```{r setup,  write.echo= FALSE,include=FALSE}
+knitr::opts_chunk$set(comment = NA, echo = FALSE, warning = FALSE, message = FALSE)
+library(tidyverse)
+library(ggplot2)
+library(lattice)
+library(readxl)
+library(mgcv)
+library(tidycensus)
+library(gridExtra)
+library(grid)
+library(MASS)
+census_api_key("2103368d35e640a56f8d434964835a51bea42115")
+cbPalette <- c(  "#56B4E9","#9900FF", "#CC79A7", "#999999",  "#0072B2")
+#cbPalette <- c("#999999", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7")
+```
+## Loading Data
+
+```{r}
+
+cpi_data = read_csv("cpi.csv")
+
+freddie_max_hpi = read_xls("State_and_US_SA.xls", skip = 5)
+
+
+#is.numeric(hpi_data$AK)  Gives False
+cpi_data = cpi_data %>% separate(Label, c(NA, "Month") ,sep= ' ')
+cpi_data = cpi_data %>% separate(Period, c(NA, "Period") ,sep= 'M')
+
+#Keeping Data after 1975
+cpi_data = cpi_data %>% filter(Year >= 1975)
+#cpi_data
+
+freddie_max_hpi_raw = data.frame(freddie_max_hpi)
+
+#Keeping just the house prices
+hpi_data = freddie_max_hpi_raw[1:540,] %>% separate(Month , c('Year','Month'), sep = 'M')
+
+#Adding CPI value in hpi Data
+hpi_data$CPI = cpi_data$Value[cpi_data$Year %in%
+                                hpi_data$Year & 
+            cpi_data$Period %in% hpi_data$Month]
+```
+
+
+```{r}
+# Loading State Abbreviations
+state_lookup = read_delim("state_abbrevs.txt", delim = ' ', col_names =   TRUE)
+```
+
+```{r}
+# population density for 2019
+population_19 = get_estimates(geography = "state", product = "population")
+population_density.19= population_19[53:103,]
+population_density.19 = population_density.19[,c("NAME", "value")]
+names(population_density.19) = c("State", "Density")
+population_density.19 = merge(population_density.19, state_lookup, by = "State")
+population_density.19 = population_density.19[,c("State", "Density", "Code")]
+#view(population_density.19)
+```
+
+```{r}
+# Value of Real House Prices in terms of dec 2019 using below equation
+# value in X dollars = Value in Y dollars(cpi of x / cpi of y) where x,y = specific years
+# https://www.youtube.com/watch?v=y_Nt5BL_wgU
+#hpi_data$CPI[540]
+hpi_data$CPI_Multiplier = hpi_data$CPI[540]/hpi_data$CPI
+```
+
+```{r}
+# Multiplying the cPI factor to all the prices of the states
+real_house_price = data.frame(apply(hpi_data[,3: 53], 2,
+  function(x){as.numeric(x)*hpi_data$CPI_Multiplier}))
+
+column_to_gather = c(colnames(real_house_price))
+```
+
+```{r}
+# Adding row and Month to real price data set
+real_house_price$Year = hpi_data$Year
+real_house_price$Month = hpi_data$Month
+#view(real_house_price)
+```
+
+```{r}
+# Coverting wide to Long Format
+real_house_price_long =real_house_price%>% 
+ gather(column_to_gather, key = Code, value = Price)  
+```
+
+```{r}
+# Getting Avergae Prices for all States in a particular Year
+real_average_price = real_house_price_long %>% 
+  group_by(Year, Code) %>%
+  mutate(MeanPrice = mean(Price))
+real_average_price = real_average_price[c("Year", "Code", "MeanPrice")] 
+real_average_price = distinct(real_average_price)
+real_average_price$Year = as.numeric(as.character(real_average_price$Year))
+```
+
+```{r}
+#Data On which to plot for trends of all states for every Year
+#Merge average price data with state data.
+real_avg_house_price_all_state = merge(real_average_price, state_lookup, by = "Code") 
+
+```
+
+```{r}
+# Getting Data for all Region for every Year
+real_avg_house_price_all_region = real_avg_house_price_all_state %>%
+  group_by(Year, Region) %>%
+  mutate(MeanRegionPrice = mean(MeanPrice))
+real_avg_house_price_all_region = real_avg_house_price_all_region[c("Year", "Region",
+                                                                    "MeanRegionPrice")] 
+real_avg_house_price_all_region = distinct(real_avg_house_price_all_region)
+
+
+#Getting Mean House Price for a Year
+real_avg_house_price_all_years = real_avg_house_price_all_state %>%
+  group_by(Year) %>%
+  mutate(MeanPriceYear = mean(MeanPrice))
+real_avg_house_price_all_years = real_avg_house_price_all_years[c("Year","MeanPriceYear")] 
+real_avg_house_price_all_years = distinct(real_avg_house_price_all_years)
+```
+
+**Question 1:House Price Over Time**
+
+The original Data from freddie Mac had house prices of all the states for ecah moth of the year. We have taken an average for all the States in a year and then plotted the graph to observe the trend for all the 51 states. For observing the overall trend in house prices from 1975 to 2019, we have taken an average of all the prices in a particular year.For trend in house Prices with in a region we have taken the average of all the prices for a Region and Year. We have adjusted the house prices for inflation as per the December 2019 dollar value for all the plots.
+
+```{r, fig.height=3, fig.width=6}
+#Trend since 1975
+ggplot(real_avg_house_price_all_years, aes( x = Year, y = MeanPriceYear))+
+  geom_line()+
+  #geom_smooth(method = "gam", se = FALSE)+
+  ggtitle("House Price trend over the years")+
+  ylab("Average Housing price") 
+  
+
+```
+    
+## Overall Trend:    
+We can see that the Plots shows a dip during the early 1980's and 1990's recession as well as a decline during the great depression of 2008.
+
+We can see that the states in the Same region follow the same pattern with a few outliers. We can easily observe that Hawaii, District of Columbia, Washington and California are states that have increasing house prices. Similarly, states like West Virginia, Mississippi, Arkansas, Ohio and Oklahoma have decreasing prices.
+
+## States with highest increase and decrease : 
+
+```{r, fig.height=4, fig.width=8}
+increasing_hpi_states = real_avg_house_price_all_state %>% filter(State %in% 
+                                            c('District of Columbia', #South
+                                             'Washington', #West
+                                             'Hawaii', #West
+                                             'California' )) #West
+                                          
+decreasing_hpi_states = real_avg_house_price_all_state %>% filter(State %in% 
+                                            c('West Virginia', #South
+                                             'Ohio', #MidWest
+                                             'Arkansas',#South
+                                             'Oklahoma', #South
+                                             'Mississippi' )) #South
+                                 
+ggplot(increasing_hpi_states, aes(x = Year, y = MeanPrice, color= Region)) + 
+  geom_line(alpha = 0.5) +
+  theme(axis.text=element_text(size=7))+
+  #geom_smooth(method = "loess",color="black", se=FALSE) +
+  ylab("Average Housing price") +
+  labs(title = "States with Increasing HPI", 
+  subtitle = paste("Years: 1975-2019"),
+  caption = "Data from US Bureau Of Labor Statistics and Freddie Mac website") +
+  scale_color_manual(values = cbPalette)+
+  facet_wrap(~State, scales = "free")
+```
+
+We see that District of Columbia have a constant increase in prices after 1995. Washington had steady increase in prices from 1989-2004. Hawwaii had 3 major dips in the time peroid of 1980-1984, early 2000's and 2010-2013.
+For California we see an sudden increase between 2000-2006, which could be due to the increase in IT growth.
+All these states show an increase after the depression of 2008
+
+```{r, fig.height=4, fig.width=8}
+ggplot(decreasing_hpi_states, aes(x = Year, y = MeanPrice, color= Region)) + 
+  geom_line(alpha = 0.5) +
+  theme(axis.text=element_text(size=7))+
+ # geom_smooth(method = "loess",color="black", se=FALSE) +
+  ylab("Average Housing price") +
+  labs(title = "States with Decreasing HPI", 
+  subtitle = paste("Years: 1975-2019"),
+  caption = "Data from US Bureau Of Labor Statistics and Freddie Mac website") +
+  scale_color_manual(values = cbPalette)+
+  facet_wrap(~State, scales = "free")
+
+```
+
+States from the South region follow the same trend of a decline during  1980-1990 and then a increase in prices till 2006. For example, Oklahoma and West Virginia shows a constant decline in prices except for a slight increase between 2000-2004.Ohio shows that it reaches a peak during early 2000s, but since has reached a low during early 2010's. We can observe that the District of Columbia has seen the highest increase in prices and State of West Virginia has seen the highest decrease in prices.
+
+## Region-wise Analysis:
+
+```{r}
+theme_cus = theme(axis.text=element_text(size=7),
+  plot.title = element_text(color="black", size=7, face="bold"),
+  plot.subtitle = element_text(color="black", size=7),
+  legend.position = c(0.3,0.8),
+  legend.direction="horizontal", 
+  legend.key.height = unit(0.1,"line"),
+  legend.key.width = unit(0.1,"line"),
+  legend.background = element_blank(),
+  legend.title = element_blank(),
+  legend.text = element_text(size = 5),
+  axis.title=element_text(size=7)) 
+
+plot_west <- ggplot(real_avg_house_price_all_state %>% filter(Region == 'West'),
+  aes(x = Year, y = MeanPrice, color = Code)) + 
+  geom_line(alpha = 0.5) +
+  #geom_smooth(method = "loess", se = FALSE, color = "blue", span = 0.9)+
+  #geom_smooth(method = "gam",color="black", se=FALSE)+
+  geom_line(data = real_avg_house_price_all_region %>% filter(Region == 'West')
+              , aes(x = Year, y = MeanRegionPrice) ,color = "black")+
+  theme_cus +
+  labs(title = "Region: West", 
+  subtitle = "Years: 1975-2019")+
+  guides(color=guide_legend(override.aes=list(fill=NA)))
+            
+plot_south <- ggplot(real_avg_house_price_all_state %>% filter(Region == 'South'), 
+  aes(x = Year, y = MeanPrice, color = Code)) + 
+  geom_line(alpha = 0.5) +
+  #geom_smooth(method = "gam",color="black", se=FALSE)+
+  #geom_smooth(method = "loess", se = FALSE, color = "blue", span = 0.9)+
+  geom_line(data = real_avg_house_price_all_region %>% filter(Region == 'South')
+              , aes(x = Year, y = MeanRegionPrice) ,color = "black")+
+  theme_cus +
+  ylab("Average Housing price") +
+  labs(title = "Region: South", 
+  subtitle = "Years: 1975-2019")+
+  guides(color=guide_legend(override.aes=list(fill=NA)))
+                
+plot_northeast <- ggplot(real_avg_house_price_all_state %>% filter(Region == 'Northeast'), 
+  aes(x = Year, y = MeanPrice, color = Code)) + 
+  geom_line(alpha = 0.5) +
+  #geom_smooth(method = "gam",color="black", se=FALSE)+
+  #geom_smooth(method = "loess", se = FALSE, color = "blue", span = 0.9)+
+   geom_line(data = real_avg_house_price_all_region %>% filter(Region == 'Northeast')
+              , aes(x = Year, y = MeanRegionPrice) ,color = "black")+
+  theme_cus +
+  ylab("Average Housing price") +
+  labs(title = "Region: Northeast", 
+  subtitle = "Years: 1975-2019")+
+  guides(color=guide_legend(override.aes=list(fill=NA)))
+               
+plot_midwest <- ggplot(real_avg_house_price_all_state %>% filter(Region == 'Midwest'), 
+  aes(x = Year, y = MeanPrice, color = Code)) + 
+  geom_line(alpha = 0.5) +
+  #geom_smooth(method = "loess",color="black", se=FALSE)+
+  #geom_smooth(method = "loess", se = FALSE, color = "blue", span = 0.9)+
+   geom_line(data = real_avg_house_price_all_region %>% filter(Region == 'Midwest')
+              , aes(x = Year, y = MeanRegionPrice) ,color = "black")+
+  theme_cus +
+  ylab("Average Housing price") +
+  labs(title = "Region: Midwest", 
+  subtitle = "Years: 1975-2019")+
+  guides(color=guide_legend(override.aes=list(fill=NA)))
+          
+grid.arrange(plot_west, plot_south, plot_northeast, plot_midwest, nrow = 2, 
+  top ="House Price trend over the years for Regions") 
+
+```
+
+### Do the typical patterns vary between the four regions (Northeast, Midwest, South, and West)?
+The Black line is the average of a Region.
+We can see that all the Region have a different rate of increase in house prices. 
+Midwest and South Region have a plateau during the 1980-1990. Midwest has a sudden dip during 1990-1992, after which it has almost linearly increased till mid 2000s. The south Region has a slower increase after the 1990 dip. The West Region has a consistent increase in prices after the 1989 dip. The Northeast region shows an overall upward trend. All the Regions show an increase during 2006-2010 period after which there is a constant decrease due to the economic depression of 2008. Similarly all the regions show a decline during the period of 1978-1983.
+
+### Have changes in prices within each state mostly followed the same basic pattern, and are there outliers to that pattern?
+We can see that all the states in the same region follow a similar trend except for a few outliers.
+
+**West**: There is an overall increase for the time line of 1975-2019. The common trend that the states in this region follow is the shift in prices after 2000. All the states a dip during the 2005-2013 and an increase before it from 2000-2006. States like Hawwaii, California and Washington have a steep increase after 2014
+
+**South**: Apart from District of Columbia,all the states in this region have followed a similar price increase after 1989. District of Columbia is the highest increase in prices compared to all the US States, going over 300.
+
+**North East**: All the states show a similar two peak trend during 1985-1990 and 2004-2006. House prices of Connecticut show a decrease which is not the pattern followed by other states in this region. Rhode Island reaches the highest peak in this region during the 2005-2010 period.
+
+**Midwest**: All the states follow the similar pattern except North Dakota. Prices have increased for all after 2010. All states have a peak near 1987-1989 and another peak at 2004-2006. Minnesota shows a sudden decline from 2004 to 2011 which is not in tandem with all the other states
+All the states in a region show a similar changes during the period of late 1990' and early 2000's. 
+But the pattern differs when we are comparing states of different regions.
+
+**Question 2: Population density and changes in house prices **
+For explaining the change in house pricing since 1975 from the present-day population density, we are finding out the difference in housing prices from 1975 to 2019 for all the regions by taking annual average of the housing prices of both years and then finding out the difference by using price value 2019-price value 1975. 
+
+```{r}
+#Filtering house price values for years 1975 and 2019
+Price1975=real_house_price[real_house_price$Year == 1975,]
+Price2019=real_house_price[real_house_price$Year == 2019,]
+priceOrg_1975.2019 = rbind(Price1975,Price2019)
+```
+
+```{r}
+# converting data from wide to long form
+price_1975.2019 = pivot_longer(priceOrg_1975.2019, 
+                               names_to = "Code", values_to = "Prices", 1:51)
+# merging state code and region for checking the density
+price_1975.2019 = merge(price_1975.2019, state_lookup, by = "Code")
+
+```
+
+```{r}
+# Filter data based on code,year and region
+meanprices_1975.2019 = price_1975.2019 %>% 
+  group_by(State,Code,Year, Region) %>% summarise(Meanprices = mean(Prices))
+
+```
+
+```{r}
+# Average house price difference between 1975 and 2019 
+mean.house.price_1975 = meanprices_1975.2019[meanprices_1975.2019$Year == 1975,]
+mean.house.price_2019 = meanprices_1975.2019[meanprices_1975.2019$Year == 2019,]
+mean.house.price.1975.2019 = 
+  merge(mean.house.price_1975, mean.house.price_2019, by = "Code")
+mean.house.price.1975.2019$difference = mean.house.price.1975.2019$Meanprices.y - mean.house.price.1975.2019$Meanprices.x
+#mean.house.price.1975.2019
+```
+
+```{r}
+
+#Merge density data with population data for both years 1975 and 2019
+mean.house.price.1975.2019 = merge(mean.house.price.1975.2019,population_density.19, by = "Code")
+mean.house.price.1975.2019.df = 
+  mean.house.price.1975.2019[c ("Code", "Region.x", 
+                                "Meanprices.x", "Meanprices.y", 
+                                "difference", "State", "Density")]
+names(mean.house.price.1975.2019.df) = 
+  c("Code", "Region", "Mean 1975", "Mean 2019", "Difference", "State", "Density")
+
+```
+
+Plot to see the change in population against population density
+
+```{r, fig.height=4, fig.width=8}
+# Plot the data 
+ggplot(mean.house.price.1975.2019.df, aes(x = Density, y = Difference)) + 
+  geom_point(size=0.7) + 
+  facet_wrap(~ Region) + 
+  geom_smooth(method = "lm", se = FALSE) + 
+  labs(title = "Population density and change in house prices(2019-1975)")+
+  xlab("Population density") + 
+  ylab("Housing Price difference") 
+```
+
+In the above plot of south region area, 
+
+The plot for Population density and changes in house prices shows different trends for all regions. We can compare our X-axis vs Y-axis and see how price difference for 1975 and 2019 is showing different trends. we can see a gross outlier(District of Columbia) which makes us difficult to analyse rest data. The population density for DC is more than 11K. If we want to study south region, we dont see any pattern for the rest of the data because of this outlier. Blue line shows the linear regression line, which finds the trend in data by averaging the neighborhood values. In the South region, if we remove this outlier then we can see a meaningful pattern for the rest of area in below plot. and we can see the same density in our graph too.
+
+```{r}
+# Data for south region is highly skewed, removing the outlier.
+mean.house.price.1975.2019.df.filter = 
+  mean.house.price.1975.2019.df[mean.house.price.1975.2019.df$Code != "DC",]
+
+```
+
+```{r, fig.height=4, fig.width=8}
+# Plot the data after removing the outliers
+ggplot(mean.house.price.1975.2019.df.filter, aes(x = Density, y = Difference)) + 
+  geom_point(size=0.5) + 
+  geom_smooth(method = "lm", se = FALSE) +
+  facet_wrap(~ Region) +
+  labs(title = "Population density and change in house prices")+
+  xlab("Population density") + 
+  ylab("Housing Price difference") 
+```
+This graph again shows different trends for different regions. In this graph, we have linear model to see the trend between housing price and Population density. Few of the general findings for this graph:
+1.	South, west, Northeast data is showing increasing slope, however Midwest data is showing decreasing trend for Housing Price with increase in Population Density.
+2.	If we see the slope gradient for all the four regions then we can say West slope gradient is having highest gradient, however, Northeast is showing a little parallel line to Population density which means lowest gradient.
+3.	Midwest: In this region, plot is showing a decreasing trend and if we see our data too, many of the states price difference is showing negative values as their density is increasing. Ohio has highest density; however, diff is in negative value. There are little bit fluctuations in data which is not readable in data because second highest density data is Illinois but the price diff is positive. However, our plot is mostly showing negative slope. There could be some other factors too, but still, we can say our Midwest data is having negative association between these two variables.
+4.	NorthEast: Data and plot both are showing same trends. In data also we don’t see much difference in association with these two variables. That’s why we have almost parallel straight fitted line wrt X-axis.
+5.	South: In this region, Data shows density with higher population shows higher difference in housing price. We can see that in our plot too that highly dense population has higher housing prices too.
+6.	West: This region is showing drastic change between these two variables. A sudden increase in density shows steep change in price difference.
+
+**********
+
+Below plot gives us a overall scatter plot for all the regions including all states. As we can see few data points like areas of west region and DC are having higher population density. If we see the overall picture we can understand that these two terms (population change and housing prices) are correlated. We can check this section in detailed in Q3 for each decades.
+
+```{r, fig.height=4, fig.width=8}
+ggplot(mean.house.price.1975.2019.df.filter, aes(x = Density, y = Difference)) + 
+  geom_point(size=0.5) + 
+  geom_smooth(method = "lm", se = FALSE) +
+  #facet_wrap(~ Region) +
+  labs(title = "Population density and change in house prices")+
+  xlab("Population density") + 
+  ylab("Housing Price difference") 
+```
+
+**Question 3: House price variation with change in population by decade**
+
+Initially, we filtered the population data to remove all the columns except state and population of 1990,2000 and 2010. Using Census API key, we obtained the population of latest year. To understand the change in population from decade to decade, we have subtracted the population for each decade and added it as new column. We adjusted the house price of all years to account for inflation by multiplying with CPI index. For each year, we calculated the mean house price to plot graphs.
+
+```{r}
+population.original = read.csv("population.csv")
+```
+
+```{r}
+#Removing all columns except State and Populations of year 1990 ,2000 & 2010
+population_data=  population.original[, c(2, 7, 8, 9)]
+names(population_data) = 
+  c("State","Population.1990","Population.2000","Population.2010")
+#Removing the Row of stae puerto rico since the population values of 1990 and 2000 are not availiable
+population_data = population_data[population_data$State !='Puerto Rico',]
+#population_data
+```
+
+```{r}
+library(tidycensus)
+population_current= get_estimates(geography= "state" ,
+                                  variable = "POP", year='2019')
+#Dropping all columns except state and current population
+population_current=  population_current[c("NAME","value")]
+#Renaming state and current population columns
+names(population_current) = c("State","Population.current")
+#Removing Puerto Rico population of current data since values for 1990 and 2000 are missing
+population_current=population_current[population_current$State !='Puerto Rico',]
+#population_current
+```
+
+```{r}
+#Merging current population dataframe with 2010, 2000 and 1990 Population Data
+population_data = merge(population_data,population_current,by="State")
+```
+
+```{r}
+#Computing Population differences between various decades and adding them as new columns to original data frame
+
+population_data$Pop.diff.2000_1990 =
+  population_data$Population.2000-population_data$Population.1990 
+
+population_data$Pop.diff.2010_2000 =
+  population_data$Population.2010-population_data$Population.2000 
+
+population_data$Pop.diff.Current_2010 =
+  population_data$Population.current-population_data$Population.2010
+
+#population_data
+```
+
+```{r}
+library(readxl)
+housing.data.original = read_xls("State_and_US_SA.xls")
+#housing.data.original
+#Dropping few initial rows since it's title and converting 6th row as column names
+housing.data = housing.data.original[-c(1:4),]
+colnames(housing.data) = housing.data[1,]
+housing.data = housing.data[-1,]
+housing.data.month = housing.data[,1]
+#Dropping month to convert data frame to numeric
+housing.data = housing.data[, -1]
+#Converting Character data type to Numeric for all columns
+housing.data = as.data.frame(lapply(housing.data,as.numeric))
+#housing.data.month
+#housing.data
+```
+
+```{r}
+library(tidyr)
+#Splitting Year column into  year and Month
+housing.data.month= separate(housing.data.month,Month, 
+                             into = c("Year", "Month"), sep= "M")
+#housing.data.month
+```
+
+```{r}
+cpi= read.csv("cpi.csv")
+cpi = cpi[cpi$Year >=1975,]
+housing.data = housing.data[1:540,]
+housing.data$CPI = cpi$Value
+#housing.data
+#Adjusting the inflation as per latest price
+houseprice.index = rep(258.501,540)/housing.data$CPI
+price.relative = housing.data[,1:51]*houseprice.index
+#Adding year and month column to the adjusted price data frame
+price.relative$Month= housing.data.month[1:540,]$Month
+price.relative$Year= housing.data.month[1:540,]$Year
+#price.relative
+```
+
+```{r}
+region = read.table("state_abbrevs.txt" , header=TRUE)
+#region
+```
+
+```{r}
+#Changing the wide form to long
+house.price.long = pivot_longer(price.relative, 
+                                names_to = "Code", values_to = "House.Price", 1:51)
+house.price.long = merge(house.price.long,region ,by="Code")
+#house.price.long
+```
+
+```{r}
+#Narrowing down the data set by taking average of monthly prices and discarding month 
+library(dplyr)
+price.avg = house.price.long %>%
+  group_by(Code, State,Year, Region) %>%
+  summarise(Mean = mean(House.Price))
+price.avg$Year = as.numeric(as.character(price.avg$Year))
+#price.avg
+```
+
+#### 1990 -1999:
+
+```{r}
+#computing the price change from year to year for the first decade
+diff_1990.2000=price.avg[price.avg$Year %in% c(1990,1999),]
+diff_1990.2000 = diff_1990.2000 %>% group_by(Code) %>%
+    mutate(difference = Mean - lag(Mean, default = first(Mean)))
+```
+
+```{r}
+#discarding the years that has no difference
+diff_1990.2000 = diff_1990.2000[! diff_1990.2000$difference %in% 0.000000,]
+diff_1990.2000 =  merge(diff_1990.2000, region, by="Code")
+names(diff_1990.2000)[2] = "State"
+#diff_1990.2000
+```
+
+```{r}
+#Merging the dataframe that has population difference with the average price difference based on the state
+diff_1990.2000 = merge(diff_1990.2000,
+                       population_data[c("State","Pop.diff.2000_1990")], by="State")
+names(diff_1990.2000)[4] = "Region"
+#diff_1990.2000
+```
+
+```{r}
+library(repr)
+library(ggplot2)
+#options(repr.plot.width = 2, repr.plot.height = 2)
+#png(filename="bench_query_sort.png", width=600, height=600)
+```
+
+```{r}
+#plotting variation in population with house prices variation : 1990 - 1999
+
+scatter.2000_1990 = ggplot(diff_1990.2000,aes(x=Pop.diff.2000_1990,y=difference)) +   
+  geom_point(size=0.7,color="steelblue") +    
+  geom_smooth(se=FALSE) +
+labs(title="Changes in population and changes in house prices: 1990 - 1999") +
+xlab("Population Change: 1990 - 1999") + 
+ylab("House Price Diff: 1990 - 1999") +
+geom_text(check_overlap = TRUE, aes(label = Code), alpha = 0.3, color = 'black')
+```
+
+```{r}
+#plotting variation in population with house prices variation : 1990 - 1999
+region.2000_1990 = ggplot(diff_1990.2000,aes(x=Pop.diff.2000_1990,y=difference,color=Region)) +   
+  geom_point(size=0.7,color="steelblue") + facet_wrap(~Region, scales = "free") +   
+  geom_smooth(se=FALSE) +
+#labs(title="Changes in population and changes in house prices: 1990 - 1999") +
+xlab("Population Change: 1990 - 1999") + 
+ylab("House Price Diff: 1990 - 1999") +
+geom_text(check_overlap = TRUE, aes(label = Code), alpha = 0.3, color = 'black')
+```
+
+```{r}
+library(patchwork)
+(scatter.2000_1990 / region.2000_1990) + plot_layout(ncol = 1, heights = c(4, 4))
+```
+
+For the decade 1990-1999, If we observe overall variation, population was decreased for DC and so is price. For the states such as HI, RI, OT we can see that even with the slightest increase in population house prices have decreased by a huge scale especially for HI. For the state FL and TX, we can see tremendous increase in population, but house price remained almost same. For OT even with little change in population, house prices have increased drastically.
+
+Again, if we individually examine various regions, particularly [*Midwest*]{.ul} doesn't follow the same pattern as Overall trend. For this we could see there is no decrease in price with the change in population, except for ND and MO we can see that there is increase in house price with increase in the population. Even for ND and MO we do not see any decrease in the price, For ND there is slight increase in price with the constant population whereas For MO price is constant although there is a considerable increase in population. For all other three regions, we can see the same trend as that of overall variation.
+
+#### 2000 - 2009
+
+```{r}
+diff_2000.2010=price.avg[price.avg$Year %in% c(2000,2009),]
+diff_2000.2010 = diff_2000.2010 %>% group_by(Code) %>%
+    mutate(difference = Mean - lag(Mean, default = first(Mean)))
+```
+
+```{r}
+diff_2000.2010 = diff_2000.2010[! diff_2000.2010$difference %in% 0.000000,]
+diff_2000.2010 =  merge(diff_2000.2010, region, by="Code")
+names(diff_2000.2010)[2] = "State"
+#diff_2000.2010
+```
+
+```{r}
+diff_2000.2010 = merge(diff_2000.2010,
+                       population_data[c("State","Pop.diff.2010_2000")], 
+                       by="State")
+names(diff_2000.2010)[4] = "Region"
+#diff_2000.2010
+```
+
+```{r}
+#plotting variation in population with house prices variation : 2000 - 2009
+scatter.2000.2010 = ggplot(diff_2000.2010,aes(x=Pop.diff.2010_2000,y=difference)) +   
+  geom_point(size=0.7,color="steelblue") +    
+  geom_smooth(se=FALSE) +
+labs(title="Changes in population and changes in house prices: 2000 - 2009") +
+xlab("Population Change: 2000 - 2009") + 
+ylab("House Price Diff: 2000 - 2009") +
+geom_text(check_overlap = TRUE, aes(label = Code), alpha = 0.3, color = 'black')
+```
+
+```{r}
+#plotting variation in population with house prices variation : 2000 - 2009
+region.2010_2000 = ggplot(diff_2000.2010,aes(x=Pop.diff.2010_2000,y=difference,color=Region)) +   
+  geom_point(size=0.7,color="steelblue") + facet_wrap(~Region, scales = "free") +   
+  geom_smooth(se=FALSE) +
+#labs(title="Changes in population and changes in house prices: 2000 - 2009") +
+xlab("Population Change: 2000 - 2009") + 
+ylab("House Price Diff: 2000 - 2009") +
+geom_text(check_overlap = TRUE, aes(label = Code), alpha = 0.3, color = 'black')
+```
+
+```{r}
+(scatter.2000.2010 / region.2010_2000) + plot_layout(ncol = 1, heights = c(4, 4))
+```
+
+For the decade 2000-2009 for DC unlike the first decade, there is huge increase in the house price with almost no variation in the population. For the state HI, unlike previous decade with the slight increase in population, we can observe massive increase in house price. For the states FL and TX, trend remained same as last decade. In this decade, it can be observed that for MI, even with the slight decrease in population, there is a considerable dip in the house price.
+
+Again, if we individually examine various regions, particularly [*Northeas*]{.ul}t region, there is no negative house price difference unlike the overall trend. For the [*Midwest*]{.ul} region, no other states except ND have seen a tremendous increase in population. In the [*South*]{.ul}, the sates LA and AL there is almost no variation in house price although there is slight increase in population.
+
+#### 2010 -2019
+
+```{r}
+diff_2010.2019=price.avg[price.avg$Year %in% c(2010,2019),]
+diff_2010.2019 = diff_2010.2019 %>% group_by(Code) %>%
+    mutate(difference = Mean - lag(Mean, default = first(Mean)))
+```
+
+```{r}
+diff_2010.2019 = diff_2010.2019[! diff_2010.2019$difference %in% 0.000000,]
+diff_2010.2019 =  merge(diff_2010.2019, region, by="Code")
+names(diff_2010.2019)[2] = "State"
+#diff_1990.2000
+```
+
+```{r}
+diff_2010.2019 = merge(diff_2010.2019,
+                       population_data[c("State","Pop.diff.Current_2010")], 
+                       by="State")
+names(diff_2010.2019)[4] = "Region"
+#diff_1990.2000
+```
+
+```{r}
+#plotting variation in population with house prices variation : 2010 - 2019
+scatter.Current_2010 = ggplot(diff_2010.2019,aes(x=Pop.diff.Current_2010,y=difference)) +   
+  geom_point(size=0.7,color="steelblue")  +   
+  geom_smooth(se=FALSE) +
+labs(title="Changes in population and changes in house prices: 2010 - 2019") +
+xlab("Population Change: 2010 - 2019") + 
+ylab("House Price Diff: 2010 - 2019") +
+geom_text(check_overlap = TRUE, aes(label = Code), alpha = 0.3, color = 'black') 
+
+```
+
+```{r}
+#plotting variation in population with house prices variation : 2010 - 2019
+region.Current_2010 = ggplot(diff_2010.2019,aes(x=Pop.diff.Current_2010,y=difference,color=Region)) +   geom_point(size=0.7,color="steelblue") + facet_wrap(~Region, scales = "free") +   
+  geom_smooth(se=FALSE) +
+#labs(title="Changes in population and changes in house prices: 2010 - 2019") +
+xlab("Population Change: 2010 - 2019") + 
+ylab("House Price Diff: 2010 - 2019") +
+geom_text(check_overlap = TRUE, aes(label = Code), alpha = 0.3, color = 'black') +
+theme(axis.text = element_text(size = 7)) 
+```
+
+```{r}
+(scatter.Current_2010 / region.Current_2010) + plot_layout(ncol = 1, heights = c(4, 4))
+```
+
+For the decade 2010-2019, the state DC follows the same pattern as second decade with the huge increase in the house price with almost no variation in the population and HI also follows the same pattern as we can see with the slight increase in population, we can observe massive increase in house price. The states FL and TX followed the major deviation from previous decades witnessing an increase in house prices with increase in population.
+
+Again, if we individually examine various regions, For the state MI in [*Midwest*]{.ul} region we can say that both population and price have increased tremendously compared to previous decades. [*South*]{.ul} Region has seen the highest increase in the house price amongst all other regions although there is very less increase in population for most of the states. In the [*West,*]{.ul} particularly the states NV, AZ, and CO there is huge increase in price with slight increase in population unlike the first decade.
+
+#### **Conclusion:**
+
+Going by Region-wise analysis, For **West** Region, the population of this region has not been increasing, however the house prices have been high for almost all 3 decades we are observing. 
+**South** Region shows stable changes in population and hose prices for all the 3 decacdes.
+**NorthEast** region shows drastic changes for both house prices and population. For the decade of 1990-2000 the house prices didn't go up even if there was an increase in population. After 2010, the house prices have seen drastic increase.
+**Midwest** show a increase in population for all the decades, but the house price doesn't increase monotonically. There is an increase in house price for the time period of 1990-2000 and after 2010, but a decrease in prices for decade of 2000-2010, which could be due to economic slowdown.
+So, it's safe to conclude that there is no fixed relationship between House price and population change as it varies differently for different states throughout the three decades. It can be inferred that variation in house price does not only depend on the population change but there probably are some external factors that influence it.
