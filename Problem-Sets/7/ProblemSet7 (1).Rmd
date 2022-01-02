@@ -1,0 +1,95 @@
+---
+title: "ProblemSet7"
+author: "Himani Anil Deshpande"
+date: "12/1/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(mgcv)
+library(broom)
+library(gridExtra)
+library(ggthemes)
+library(gghighlight)
+library(socviz)
+library(mapproj)
+library(usmap)
+library(maps)
+cbPalette <- c("#999999", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7")
+```
+
+
+
+## Load Data
+```{r}
+covid.data = read.table("eday-covid.txt", header = TRUE)
+# view(covid.data)
+```
+The data I have used is the eday-covid data which has the statistics of covid cases and other population relater variables of USA during the covid19 pandemic. The table has 60 columns with 3243 records. The table has geographical variables like FIPS code for each county in a state. So I will be using this to plot the variables like population estimation of 2019 ( popestimate2019) and number of Deaths(deaths)  by county
+
+```{r}
+
+covid.subset = na.omit(covid.data[c("deaths", "cases","popestimate2019","fips", "county")])
+
+```
+
+```{r}
+
+plot_usmap(data = covid.subset, regions = "counties",  values = "deaths" , labels = FALSE)  + 
+ ggtitle( "Number of Deaths in US", subtitle = "Georgaphical Unit: Counties") + 
+    theme(legend.position = "right")+
+    scale_fill_continuous(name = "Number of Deaths", label = scales::comma, low = "#CC79A7", high ="#999999",
+                          limits = c(min(covid.subset$deaths),max(covid.subset$deaths)))
+```
+
+
+```{r}
+
+plot_usmap(data = covid.subset, regions = "counties",  values = "popestimate2019" , labels = FALSE)  + 
+ ggtitle( "Population Estimate of 2019 in US", subtitle = "Georgaphical Unit: Counties") + 
+    theme(legend.position = "right")+
+    scale_fill_continuous(name = "Population", label = scales::comma, low = "#009E73", high ="#999999",
+                          limits = c(min(covid.subset$deaths),max(covid.subset$deaths)))
+```
+# Scatter
+```{r}
+ggplot( covid.subset, aes(popestimate2019, deaths), color = county) +
+   geom_point() + 
+  gghighlight(deaths > 3500, label_key = county , use_group_by = FALSE)+
+  xlab('Population Estimate in 2019') +
+  ylab('Number of Deaths') +
+  
+  ggtitle('Population Estimate 2019 vs Deaths in 2019', subtitle = "In US County") 
+```
+
+```{r}
+ggplot( covid.subset, aes(popestimate2019, cases), color = county) +
+   geom_point() + 
+  gghighlight(cases > 150000, label_key = county , use_group_by = FALSE)+
+  xlab('Population Estimate in 2019') +
+  ylab('Number of Cases') +
+  
+  ggtitle('Population Estimate 2019 vs Cases in 2019', subtitle = "In US County") 
+```
+
+
+
+
+
+## Relationship
+
+The number of Deaths due to covid has been high in Los Angeles, Cook, Maricopa, Miami-Dade which is greater than 3500. At the same time, these counties show a high population estimate. So Los Angeles, Chicago and Miami have highest Populations density, which could be why they have high number of deaths.  
+As these places are crowded they probably have more chances of somebody getting infected with Covid19. When we check the graphs we can see that these 3 counties are among the places which have highest number of covid19 cases. 
+There could be other reasons that could have resulted in deaths of the patient lack of patient care or that the hospitals were overcrowded, the data for these parameters about hospital care are not present in the one which we are analyzing.
+Also, these 3 counties are in LA, Chicago and Miami, which are famous tourist spots in USA. As more number of people might have traveled to these places, the number of cases might have increase which could have led to higher deaths.
+So, high population and higher number of covid infected people could be the reason for these 3 counties to have higher number of Deaths.
+
+
+
+## References
+https://www.rdocumentation.org/packages/usmap/versions/0.5.2/topics/plot_usmap
+https://jtr13.github.io/cc19/different-ways-of-plotting-u-s-map-in-r.html
+https://www.littlemissdata.com/blog/highlight

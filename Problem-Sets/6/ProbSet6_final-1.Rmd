@@ -1,0 +1,228 @@
+---
+title: "Problem Set 6"
+author: "Himani Anil Deshpande"
+date: "11/11/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(comment = NA, echo = FALSE, warning = FALSE, message = FALSE)
+library(tidyverse)
+library(GGally)
+library(broom)
+library(arm)
+library(MASS)
+cbPalette =  c("#999999", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7")
+```
+## Introduction
+
+In the Lecture we observed that the Morris site showed uncommon pattern compared to all the sites in Minnesota for the year 1931 and 1932. In Cleveland we see that the yields for these two years were interchanged to see that the pattern if follows is similar to that of the other sites.(page 329-331). After further analysis, we see that this mistaken yield reversal was the most likely explanation of the abnormality of the yeilds suring these two years rather than due to any extraordinary event like drought or infestation of crop.
+We explore the expanded dataset for a decade from 1927-1936, to better understand whether the Morris data can be explained as a random variation or an error.
+
+
+
+## Data Load
+```{r}
+barley.data = read.table("minnesota.barley.yield.txt", header = TRUE)
+# view(barley.data)
+
+theme_cus = theme(axis.text=element_text(size=10),
+  plot.title = element_text(color="black", size=15, face="bold"),
+  plot.subtitle = element_text(color="black", size=10),
+  axis.title = element_text(color="black", size=12)) 
+```
+
+## Question 1
+### Draw an appropriate faceted graph showing how barley yield varied by year at each location,
+
+
+There are about 22 different barley types which is difficult to show in faceted graph. Also, Barley types like Jeans is not available for any sites. Other Barley variety like, Oderbrucker, Odessa, Spartan, SD1340,etc do not have data of yields before the year of 1933. 
+
+And, Barley type like CompCross, MechMixture and Dryland have data only for years of 1930-1931 and 1928-1929 respectively. 
+Barley type no457 has data available from 1929-1931. And, barley type "Heinrichs' has data from 1927-1931.
+
+So we can say that not all of the 22 barley types that we are looking at were grown at the same time at all of the sites in the decade of 1927-1936. One of the reason could be that a certain type of barley type doesn't provide any significant yield/ profitable yield in a particular site due to environmental parameters like soil type, weather, etc.
+So it looks like taking the sum of all the barley types as the yield for each year will give me a better idea about the yield.
+
+
+```{r}
+barley.data.sum_yield=  aggregate(barley.data$yield, by = list(year = barley.data$year,site = barley.data$site), FUN = sum)
+  
+names(barley.data.sum_yield) = c('year','site','sum_yield')
+
+```
+
+
+```{r}
+
+((barley.data.sum_yield %>% group_by(year) %>% summarize( count =n())) %>% filter( count <6))$year
+
+# view(barley.data.sum_yield %>% filter(year %in% c(((barley.data.sum_yield %>% group_by(year) %>% summarize( count =n())) %>% filter( count <6))$year)))
+```
+
+```{r,  fig.height= 8, fig.width= 13}
+
+barley.data.sum_yield$year = as.numeric(as.character(barley.data.sum_yield$year))
+
+ggplot(barley.data.sum_yield, aes(x = year, y = sum_yield,  color = site)) +
+  geom_line()+
+  
+  xlab("Year")+
+  ylab("Total Barley Yield (in bushels per acre)")+
+
+ 
+  ylim(min(barley.data.sum_yield$sum_yield),max(barley.data.sum_yield$sum_yield))+
+  ggtitle("Barley Yield V/s Year in Minnesota", subtitle = "For Different location")+
+  facet_wrap(~site, scale = "free")+
+  scale_fill_manual(values = cbPalette)+theme_cus
+
+
+```
+
+
+
+
+I don't see any common pattern between the 6 sites other than that all of the sites have seen a decline in yields from the year of 1934-1935. 
+Crookston doesn't have data in the year of 1928 and Morris doesn't have any yield data during the year of 1933-1934. Also, in the previous analysis I did mention that not all the barley types(gen) have data available for every year in the decade, this could be one of the reasons for finding random in the patterns of the yields and no common pattern for all sites
+
+We can observe that in the year of 1935, Morris, StPaul and Wasseca shows the highest peak of their Barley yield in a decade. Similarly, the sites, Crookston, Duluth and GrandRapids reaches their highest barley yeild in the year of 1934 with a yields above 600.
+
+The highest yield  of 848 bushels per acres is given by Waseca in the year of 1935 and the lowest yield of 106.1 bushels per acres is observed by Crookston in the year of 1936
+
+
+We can observe that Crookston and StPaul have the same total yield during 1931 and 1932.
+
+If we obseve StPaul and Waseca site, we can see that from the year 1933-1935, the yield of 1934 was suddenly dropped to each of their lowest peak in the decade and then it peaked at their highest in 1935.
+For StPaul the yield in 1935 is 4 times the yield of its previous year. And for Waseca the yield of 1935 was almost 2.5 times the yield of its previous year.
+If we observe Duluth, GrandRapids and Crookstone from 1933-1935, they have seen a sudden increase in 1934 and then a decline thereafter which reached a lowest peak in 1936.
+Crookston and Duluth show an increase in yield during the year of 1932-1934, which is a contract to the yields of any other sites during this period.
+Overall, we can see that there is a lot of irregularity in the data due to missing data point as well as no common patterns among the sites. 
+
+
+
+## Question 2
+### Fit a model with yield as the response and gen (variety), year, and site as explanatory variables
+
+
+In the previous section we see that there is no common pattern for all the six sites, which could be due to multiple factors like soil type, drought, weather, or crop rotation, etc. We will try to fit a model with yield as response variable and gen, year and site as response variables.
+
+```{r}
+# is.factor(barley.data$year)
+barley.data$year = as.factor(barley.data$year)
+```
+
+
+```{r}
+
+# colnames(barley.data)
+# ggpairs(barley.data.sum_yield,columns = c('sum_yield','year','site'), diag=list(continuous="density",   discrete="bar"))
+# 
+# ggpairs(barley.data,columns = c('yield','year','site'), diag=list(continuous="density",   discrete="bar"))
+
+AIC(rlm(yield ~ gen + site + year, psi = psi.bisquare, data = barley.data))
+AIC(lm(yield ~ gen + site + year, data = barley.data))
+
+AIC(lm(yield ~ gen + site + year + site:gen+ year:site, data = barley.data))
+
+AIC(lm(yield ~ gen + site + year +  year:site, data = barley.data))    ###BEst
+
+AIC(lm(yield ~ gen + site + year +  year:gen, data = barley.data))
+
+```
+
+
+The initial simple model that I choose  was the RLM model, based on the data outliers, but this model's residual did not explain the data at all. Also, the residual plot of this model showed that for some of the sites the smoother line was tilting above 0. I looked at other models for improvement. I have kept the plots of this model in Appendix.
+
+
+The model that I choose after this, is the Linear Regression model. I tried using interactions between different variables but found that year and site interaction improved the model satisfyingly.
+Based on below residual plots. the improvement in the model after interaction between year and site and the AIC value I choose the LM model.
+
+Another reason for not choosing LM over RLM is that I couldn't add the interaction between year and site without handling the null values
+
+```{r}
+barley.lm = lm(yield ~ gen + site + year +  year:site, data = barley.data)
+
+barley.lm.df = barley.data
+barley.lm.df$.fitted = fitted.values(barley.lm)
+barley.lm.df$.resid = residuals(barley.lm)
+
+barley.lm.df$year = as.numeric(as.character(barley.lm.df$year))
+
+
+
+```
+## Question 3
+
+### Draw plots of the fit and residuals 
+
+```{r}
+ggplot(barley.lm.df, aes(y = .fitted, x = as.numeric(year))) + 
+  geom_point() + 
+  geom_smooth(method =  "loess", se = F)+
+  facet_wrap(~site ) +
+  labs(tittle= "Fitted Values V/S Year", subtitle = "For Different location", y = "Fitted Values", x ="Years")
+  
+```
+
+We observe that there is a similarity in the pattern followed by Morris, Duluth and Crookston. So we cannot say that the data was an anomaly for Morris during 1931-1932. It could very well be a natural phenomenon which have influenced the yields of barley.
+
+We can also see that in 1934, the graph for StPaul and Waseca dont follow the pattern of other sites.
+
+```{r}
+
+ggplot( barley.lm.df, aes(x = as.numeric(year), y = .resid)) + 
+  geom_point() + 
+  facet_wrap(~site) + 
+ 
+
+  geom_smooth(method =  "loess",  se = F) +
+  scale_x_continuous()+
+  labs(title = "Residuals plot V/s Year",
+      subtitle = "For different Location", y = "Residuals", x ="Years")
+```
+
+
+The variation in data is explained by the model which we can see through the residual plot. The data points are dispersed around the line, so it looks like linear model was the correct choice. The points are symmetrical around the smoother line.
+I tried multiple different models but choose the one with lowest AIC value. Compared to the other models the residual plot is much better, it seems  to explain the data points for all the sites.  The loess geom smoother fits the data perfectly and is coinciding with 0, so it shows that this model has minimum error.
+
+
+
+As Morris doesn't show any significant deviation in the residual plot, I can say that the randomness could be the explanation rather than any mistaken data swapping of the year 1931 and 1932. So the irregularity in the data for all the sites explains that it could be a natural random variation. Thus, we can say that there is an anomaly of data.
+
+
+## Appendix
+```{r}
+# ggplot(barley.data, aes(x =  as.numeric(as.character(year)),y = yield, color = gen))+
+#   geom_point()+
+#  
+#   facet_wrap(~site)
+```
+```{r}
+barley.rlm = rlm(yield ~ gen + site + year , data = barley.data)
+
+barley.rlm.df = barley.data
+barley.rlm.df$.fitted = fitted.values(barley.rlm)
+barley.rlm.df$.resid = residuals(barley.rlm)
+
+barley.rlm.df$year = as.numeric(as.character(barley.rlm.df$year))
+
+
+ggplot(barley.rlm.df, aes(y = .fitted, x = as.numeric(year))) +
+  geom_point() +
+  geom_smooth(method =  "loess", se = F)+
+
+  facet_wrap(~site ) +
+  labs(tittle= "Fitted Values V/S Year", subtitle = "For Different location", y = "Fitted Values", x ="Years")
+
+
+ggplot( barley.rlm.df, aes(x = as.numeric(year), y = .resid)) +
+  geom_point() +
+  facet_wrap(~site) +
+
+  geom_smooth(method =  "loess",  method.args = list(degree = 1), se = F) +
+  scale_x_continuous()+
+  labs(title = "Residuals plot V/s Year",
+      subtitle = "For different Location", y = "Residuals", x ="Years")
+  
+```
+

@@ -1,0 +1,282 @@
+---
+title: "Assignment 5"
+author: "Himani Anil Deshpande"
+date: "10/23/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(MASS)
+library(arm)
+library(broom)
+library(grid)
+library(png)
+library(jpeg)
+library(GGally)
+cbPalette <- c( "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7", "#999999")
+```
+# Loading Data
+
+```{r}
+nba.data = read.table("curry2015-16.txt", header= 1)
+
+
+nba.data = nba.data[,c('EVENT_TYPE','SHOT_MADE_FLAG','SHOT_DISTANCE','LOC_X','LOC_Y')]
+# view(nba.data)
+```
+
+
+```{r}
+ggpairs(nba.data) #Correlation between SHOT_DISTANCE and LOC_Y is high
+# ggplot(nba.data, aes(x = log(SHOT_DISTANCE))) +
+#   geom_histogram()
+# 
+# ggplot(nba.data, aes(x = (SHOT_DISTANCE)^(1/3))) +
+#   geom_histogram()
+# 
+# ggplot(nba.data, aes(x = (LOC_Y)^(1/3))) +
+#   geom_histogram()
+# ggplot(nba.data, aes(x = (LOC_Y))) +
+#   geom_histogram()
+# # 
+# # log(min(nba.data$LOC_Y))
+# # log(min(nba.data$SHOT_DISTANCE))
+
+```
+
+We need to perform transformation as there is skewed data for LOC_Y and SHOT_DISTANCE, log trandormation and square root tranformation was producing NaN for LOC_Y. Cube root transformation is good for handling the negative values and doesnt produce NaN's. For SHOT_DISTANCE we can perform log transformation.
+
+#### Plot the data to show the location of Curry’s shots using color to distinguish between made and missed shots, similarly to the picture below but more colorblind-friendly. (You don’t have to include the picture of the court unless you want to show off.) NB: It should use coord fixed() since the units are the same for both axes.
+
+```{r}
+
+ titles = labs(title = "Shots made by Stepen Curry", x = "Horizontal Distance from basket in ft", y = "Vertical Distance from basket in ft",
+  subtitle = "2015-16 NBA season") 
+   # xlab("Horizontal Distance from basket in ft") +
+   # ylab("Vertical Distance from basket in ft")
+
+#https://content.sportslogos.net/logos/6/235/full/141_golden_state-warriors-stadium-2012.png
+
+# background_img = "golden_state-warriors-stadium-2012.png"
+# 
+# court_background =  rasterGrob(readPNG(background_img), interpolate = TRUE, width=unit(1.2, "npc"), height=unit(1, "npc"))
+# 
+# ggplot(nba.data, aes(x = LOC_X, y = LOC_Y, color = EVENT_TYPE)) +
+#   annotation_custom(court_background, xmin=-Inf, xmax=Inf, ymin=-Inf, ymax=Inf) +
+#   geom_point(size = 1, alpha = 0.5) + 
+#     coord_fixed(ratio = 1)  + #ratio = 1 means units are the same for both axes.
+#     titles
+
+
+
+# background_img = "basketball-court-top-view-vector-illustration-on-black-background-1.jpeg"
+# 
+# court_background =  rasterGrob(readJPEG(background_img), interpolate = TRUE, width=unit(1.3, "npc"), height=unit(0.9, "npc"))
+# 
+# ggplot(nba.data, aes(x = LOC_X, y = LOC_Y, color = EVENT_TYPE)) +
+#   annotation_custom(court_background, xmin=-Inf, xmax=Inf, ymin=-Inf, ymax=Inf) +
+#   geom_point(size = 0.8,  alpha = 0.5) + 
+#   scale_colour_manual(values = cbPalette) +
+#   coord_fixed(ratio = 1) +#ratio = 1 means units are the same for both axes.
+#   titles
+# 
+
+background_img = "download_colorBlind_nba_court.jpeg"
+
+court_background =  rasterGrob(readJPEG(background_img), interpolate = TRUE, width=unit(1.25, "npc"), height=unit(0.85, "npc"))
+
+ggplot(nba.data, aes(x = LOC_X, y = LOC_Y, color = EVENT_TYPE)) +
+  annotation_custom(court_background, xmin=-Inf, xmax=Inf, ymin=-Inf, ymax=Inf) +
+  geom_point( alpha = 0.5) + 
+  scale_colour_manual(values = cbPalette) +
+  coord_fixed(ratio = 1) + #ratio = 1 means units are the same for both axes.
+  titles
+```
+
+
+```{r}
+ggplot(nba.data , aes(x =SHOT_DISTANCE, color = EVENT_TYPE ) )+
+  geom_histogram() +
+  scale_x_continuous(breaks = seq(0,80, 10))+
+   facet_wrap(~EVENT_TYPE) +
+  labs(title = "Histogram of shots made by stepen Curry", subtitle = "NBA season 2015-16", y = "Count", x = "Distance from basket in ft")
+
+```
+Researching on the bastket ball court, I understand that Steph Curry has made most of the shots from a 3 point line which is 22.14ft away from the basket. And the second section of the court taht he made most of the shots are near the basket itself. He has missed 250 shots made from the 3 point line and basketted almost 190 shots made from the same line. From the goals made from near the basket, he has successfully made those shots most of the time, could be bcause they are easier to make. Also, 55ft away from the basket, he has always the missed the shot, understandably as they seem almost impossible to make.
+Most of the shots that he has ever attempted have been below 32 ft away from the basket.
+
+
+
+#### Fit a logistic regression to predict whether the shot is made, using the single predictor SHOT DISTANCE. Draw an appropriate ggplot of the fitted curve and write an equation for the fit
+```{r}
+
+# #cor(nba.data$SHOT_DISTANCE, nba.data$EVENT_TYPE)
+# cor( nba.data$SHOT_MADE_FLAG, nba.data$SHOT_DISTANCE)
+# cor(  nba.data$SHOT_DISTANCE, nba.data$SHOT_MADE_FLAG)
+
+nba.model.glm = glm(SHOT_MADE_FLAG ~ SHOT_DISTANCE, data = nba.data, family = "binomial") # Binomial as we have two outcomes
+# nba.model.glm = glm(SHOT_MADE_FLAG ~ SHOT_DISTANCE, data = nba.data, family = binomial(link="logit")) # Binomial as we have two outcomes
+nba.model.grid = expand.grid(SHOT_DISTANCE = seq(0,90, 5))
+
+nba.model.pred = predict(nba.model.glm, newdata = nba.model.grid, type = "response")
+nba.model.grid = data.frame(nba.model.grid, prob = as.vector(nba.model.pred))
+
+ggplot(nba.model.grid, aes(x = SHOT_DISTANCE, y = prob))+
+  geom_line()  +
+  geom_vline(xintercept = 22.14, color = "#F0E442")+
+  labs(title = "Fitting logistic Regression model", subtitle = "Probablity of making a shot by Stepen Curry",
+       y = "Probability", x = "Distance from basket in ft")
+
+summary(nba.model.glm)
+
+```
+As asked, using just the SHOT_DISTANCE variable to predict if Step Curry can make a shot. The model predicts that he can make a shot 
+with 0.6 probability from 3 feet from the basket and 0.48 probability from the 3 point line as shown by the yellow line.And a probability of 0.5 for making a shot  from 18.5 ft away from basket.
+
+The equation for this logistic regression model is logit[P(shot_made by step curry)] = 0.54508 -0.03045 * distance from basket in ft
+
+
+#### Plot the residuals in a way that shows where the logistic regression doesn’t fit the data well. Describe in some detail how the model is inaccurate.
+```{r}
+nba.model.glm.df = data.frame(nba.data, .resid = residuals(nba.model.glm, type = "response") , .fitted = fitted.values(nba.model.glm))
+
+g1 = ggplot(nba.model.glm.df, aes(y = .resid, x = SHOT_DISTANCE))+
+         geom_jitter(height = 0.15,widtgh=0.4) +
+  geom_smooth(method = "loess", method.args = list(degree = 1))+
+  labs(title = "Residuals of Logistisc regression Model", x = "Distance from basket in ft", y = "Residuals")
+
+g1
+
+ggplot(nba.model.glm.df, aes(y = .resid, x = .fitted))+
+         geom_jitter() +
+  geom_smooth(method = "loess", method.args = list(degree = 1))+
+  labs(title = "Residuals v/s Fitted Values of Logistisc regression Model", x = "Fitted Values", y = "Residuals")
+
+
+```
+When I plot the Residuals against shot distance, The curve is high near 0 and it starts dipping low when the distance is below 23, then it again curves up and then goes down. The model doent fit properly as the changes of making a shot is high when the Step Curry is near the basket. However, from the residual plot I can see that model underestimates the probalility of step curry making the shot. The model isnt a good fit as the residual plot is not linear and shows pattern. The model is underestimating the shots which are nearer to basket and overestimating the shots which away from the basket. Also, the AIC of the model is 2175 for a single variable model, which can be reduced by adding a few more factors.
+ 
+#### Fit a better model. You could try a different functional form or a model with more predictors (as long as you use the predictors sensibly.) Your model doesn’t have to be perfect, just better. Draw a graph that shows how your model differs from the simple logistic regression, and convince us that your model is better.
+
+
+```{r}
+# https://community.rstudio.com/t/cube-root-of-a-negative-number/48245/3
+Math.cbrt <- function(x) {
+    sign(x) * abs(x)^(1/3)
+}
+x <- c(-1, -6, -27, -16)
+Math.cbrt(x)
+```
+Adding the other two variables and checking different interactions of these variables to give the lowest AIC  as well as performing the cube root transformations as we saw slight skewness in SHOT_DISTANCE and LOC_Y
+```{r}
+nba.data$log_shot_distance = log(nba.data$SHOT_DISTANCE+ 0.1)
+nba.data$cuberoot_loc_y = Math.cbrt(nba.data$LOC_Y)
+# nba.model.glm2 = glm(SHOT_MADE_FLAG ~ SHOT_DISTANCE +s(LOC_Y), data = nba.data, family = binomial)
+# nba.model.grid2 = expand.grid(SHOT_DISTANCE = seq(0,90, 5))
+
+
+# AIC(glm(SHOT_MADE_FLAG ~ SHOT_DISTANCE, data = nba.data, family = "binomial"))
+# 
+# AIC(glm(SHOT_MADE_FLAG ~ SHOT_DISTANCE +LOC_Y, data = nba.data, family = "binomial"))
+# 
+# AIC(glm(SHOT_MADE_FLAG ~ SHOT_DISTANCE +LOC_Y + LOC_X, data = nba.data, family = "binomial"))
+# 
+# 
+# AIC(glm(SHOT_MADE_FLAG ~ SHOT_DISTANCE* LOC_Y , data = nba.data, family = "binomial"))
+# AIC(glm(SHOT_MADE_FLAG ~ SHOT_DISTANCE* LOC_Y *LOC_X, data = nba.data, family = "binomial"))
+# 
+# AIC(glm(SHOT_MADE_FLAG ~ SHOT_DISTANCE *LOC_X+LOC_Y, data = nba.data, family = "binomial"))
+# 
+# 
+# AIC(glm(SHOT_MADE_FLAG ~ SHOT_DISTANCE+ LOC_X:LOC_Y, data = nba.data, family = "binomial"))
+# AIC(glm(SHOT_MADE_FLAG ~ SHOT_DISTANCE+ LOC_X, data = nba.data, family = "binomial"))
+
+
+# AIC(glm(SHOT_MADE_FLAG ~ SHOT_DISTANCE+ SHOT_DISTANCE:LOC_Y:LOC_X, data = nba.data, family = "binomial"))
+# # AIC(glm(SHOT_MADE_FLAG ~ SHOT_DISTANCE+ SHOT_DISTANCE:LOC_Y + SHOT_DISTANCE:LOC_X + LOC_Y:LOC_X, data = nba.data, family = "binomial"))
+# AIC(glm(SHOT_MADE_FLAG ~ SHOT_DISTANCE+ LOC_Y:LOC_X, data = nba.data, family = "binomial"))
+# AIC(glm(SHOT_MADE_FLAG ~ SHOT_DISTANCE* LOC_Y :LOC_X, data = nba.data, family = "binomial"))
+# AIC(glm(SHOT_MADE_FLAG ~ log_shot_distance + LOC_Y:LOC_X, data = nba.data, family = "binomial"))
+
+
+
+AIC(glm(SHOT_MADE_FLAG ~ sqrt(SHOT_DISTANCE) + LOC_Y :LOC_X, data = nba.data, family = "binomial"))
+
+# AIC(glm(SHOT_MADE_FLAG ~ cuberoot_shot_distance + LOC_Y:LOC_X, data = nba.data, family = "binomial"))
+
+
+AIC(glm(SHOT_MADE_FLAG ~ log(SHOT_DISTANCE + 0.0001) + LOC_Y:LOC_X, data = nba.data, family = "binomial"))
+AIC(glm(SHOT_MADE_FLAG ~ log_shot_distance + cuberoot_loc_y:LOC_X, data = nba.data, family = "binomial"))#  best model
+
+AIC(glm(SHOT_MADE_FLAG ~ log_shot_distance - log_shot_distance:cuberoot_loc_y + log_shot_distance:LOC_X, data = nba.data, family = "binomial"))
+```
+
+
+```{r}
+# view(nba.data)
+modelX = glm(SHOT_MADE_FLAG ~ log_shot_distance+ cuberoot_loc_y:LOC_X , family = "binomial", data = nba.data)
+summary(modelX)
+modelX.df = data.frame(nba.data, .resid = residuals(modelX, type = "response") , .fitted = fitted.values(modelX))
+
+
+ggplot(modelX.df, aes(y = .resid, x = .fitted))+
+         geom_jitter() +
+  geom_smooth(method = "loess", method.args = list(degree = 1))+
+  labs(title = "Residuals of Complex Logistisc regression Model", x = "Fitted Values", y = "Residuals")
+
+```
+```{r}
+ggplot(modelX.df, aes(y = .resid, x = SHOT_DISTANCE))+
+         geom_jitter() +
+  geom_smooth(method = "loess", method.args = list(degree = 1))+
+  labs(title = "Log of Shot Distance V/s Residuals of Complex Logistisc regression Model", x = "Distance from basket in ft", y = "Residuals")
+
+
+```
+
+
+
+Depending on AIC I can see that the model that takes into account the interaction of LOC_X and LOC_Y is much better than the simpler one based on SHOT_DISTANCE.
+```{r}
+
+ggplot(modelX.df, aes(y = .resid, x = LOC_X))+
+         geom_jitter() +
+  geom_smooth(method = "loess", method.args = list(degree = 1))+
+  labs(title = "Location X V/s Residuals of Complex Logistisc regression Model", x = "Horizontal Distance from basket in ft", y = "Residuals")
+
+```
+```{r}
+
+ggplot(modelX.df, aes(y = .resid, x = LOC_Y))+
+         geom_jitter() +
+  geom_smooth(method = "loess", method.args = list(degree = 1))+
+  labs(title = "Location Y v/s Residuals of Complex Logistisc regression Model", x = "Vertical Distance from basket in ft", y = "Residuals")
+
+```
+
+
+  
+The residual plot looks better than the previous one.
+By looking at the residual v/s fitted value plot, we can see that the line underestimates fro the single predictor model. However, it is fitting better for the multiple predictor model. Also, the AIC value has been reduced from 2175 to 2157.692, when we use multiple predictor model. The multi predictor model is not the perfect fit maybe using gam or loess could give a better model, but its better than the single predictor model. We can see a few deviations of the line but that is after 38 ft away from the basket, which is almost mid court and difficult to make. So, we can say that the multi predictor model is better than the single variable model
+```{r}
+# modelX.grid2  = expand.grid(SHOT_DISTANCE = seq(0,90, 5),  LOC_X = c(-200, -100,0, 100,200), LOC_Y = c(0, 50,100, 150 ,200, 250))
+# modelX.grid2$log_shot_distance = log(modelX.grid2$SHOT_DISTANCE+ 0.1)
+# modelX.grid2$cuberoot_loc_y = Math.cbrt(modelX.grid2$LOC_Y)
+# 
+# modelX.grid2.pred = predict(modelX, newdata = modelX.grid2, type = "response")
+# modelX.grid2.df = data.frame(modelX.grid2, prob = as.vector(modelX.grid2.pred))
+# 
+# 
+#  ggplot(modelX.grid2.df, aes(x = LOC_Y, y = prob , group = LOC_X, color= factor(LOC_X)))+
+#   geom_line()+
+#   geom_vline(xintercept = 22.14, color = "#F0E442")+
+#   labs(title = "Fitting Complex logistic Regression model", subtitle = "Probablity of making a shot by Stepen Curry",
+#        y = "Probability", x = "Distance from basket in ft")     
+# 
+
+```
+
+
+
